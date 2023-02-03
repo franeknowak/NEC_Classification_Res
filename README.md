@@ -5,6 +5,6 @@ I am/was using this repo as an online backup for my dissertation code. I am cond
 Files:
 1. ExperimentN - Deployable models to be sent to a HPC
 2. custom_dl_functions - custom dataloader functions allowing for easy customisability of CheXpert dataset
-3. model_training_engine - functions specifically for training the model
+3. train_eng - functions specifically for training the model
 
 If you have any questions feel free to email at franciszek.nowak.20@ucl.ac.uk
