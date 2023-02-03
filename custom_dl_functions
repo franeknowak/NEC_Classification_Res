@@ -1,0 +1,230 @@
+"""
+This is a separate python file containing all functions essential for creating dataloder + downloading the dataset
+"""
+
+import numpy as np
+import pandas as pd
+import csv
+
+import torch
+import torchvision.transforms as transforms
+import torchvision
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+
+from pathlib import Path
+import requests
+import os
+import zipfile
+
+from PIL import Image
+
+# Get images and labels that we are interested in:
+# 1. Frontal
+# 2. From specified categories
+# 3. With only a single label
+# 4. That follow rules: NaN changed to 0 and uncertainties to 1 ('ones' policy)
+def special_image_names_and_labels(data_PATH, class_names, policy = "ones", multilabel = False):
+    """
+    Narrows down images and labels to what we are interested in.
+
+    Takes csv file and alters it to only include an image path and
+    adequate label. It also fixes any NaN and empty strings issues
+    as well as decides what to do with uncertain data and whether to
+    allow multilabelled images.
+
+    Args:
+    data_PATH: path to csv file with information about the images
+    class_names: pathologies we would like to export from initial dataset -> keep at 6!
+    policy: what to do with uncertain (labelled '-1') data
+    multilabel: whether to allow multilabelled images into the dataset
+
+    Returns:
+    images: list of image directories
+    label: category labels of the aforementioned images
+    """
+    # Initialise variables
+    image_names = []
+    labels = []
+
+    # In headers we are looking for Path of images + pathologies
+    headers = ['Path']
+    headers = headers + class_names
+
+    # Read csv
+    data = pd.read_csv(data_PATH)
+
+    # Leave only columns with specified headers
+    data = data.loc[:, headers]
+
+    # Replace empty strings and NaN with 0
+    data = data.replace('', 0)
+    data= data.fillna(0)
+
+    # Update the initial file
+    data.to_csv(data_PATH, index = False)
+
+    # Open the csv once more
+    with open(data_PATH, "r") as f:
+        csvfile = csv.reader(f)
+
+        # Remove header
+        next(csvfile, None)
+
+        # Iterate over each information from each image
+        for line in csvfile:
+            image_name = line[0]
+            label = line[1:]
+
+            # Iterate over each pathology information
+            for i in range(len(class_names)):
+                instance = int(float(label[i]))
+
+                # If its uncertain then follow the policy
+                if instance == -1:
+                    if policy == 'ones':
+                        instance = 1
+                    elif policy == 'zeroes':
+                        instance = 0
+                
+                # Update the label
+                label[i] = instance         
+
+            # Depending on the multilabel parameter either get only images with
+            # a single classification, or save all except for the ones with a 
+            # missing label.
+            if multilabel == False:
+                if sum(label) != 1:
+                    continue
+            else:
+                if sum(label) == 0:
+                    continue
+            
+            # Combine into two big lists of paths and labels
+            image_names.append('/SAN/medic/FranekNEC/Runs/' + image_name)
+            labels.append(label)
+
+    return image_names, labels
+
+class CheXpertDataSet(Dataset):
+    """
+    Creats an instance of a dataset (most likely application in: test, train, val)
+
+    Takes image paths and labels we are interested in and returns them as an iterable
+    entity. It also applies transforms to images.
+
+    Args:
+    data_PATH: path to csv file with information about the images
+    class_names: pathologies we would like to export from initial dataset -> keep at 6!
+    policy: what to do with uncertain (labelled '-1') data
+    multilabel: whether to allow multilabelled images into the dataset
+    transform: sequence of transforms that you want applied to the dataset
+
+    Returns dataset containing:
+    image tensors
+    label lists
+    """
+    def __init__(self, data_PATH, class_names, transform = None, policy = "ones", multilabel = False):
+
+        # Get image paths and their labels for only those images we are interested to have in the dataset
+        image_names, labels = special_image_names_and_labels(data_PATH, class_names = class_names, policy = policy, multilabel = multilabel)
+
+        self.image_names = image_names
+        self.labels = labels
+        self.transform = transform
+
+    def __getitem__(self, index):
+        image_name = self.image_names[index]
+        image = Image.open(image_name).convert('RGB')
+        label = self.labels[index]
+
+        # Apply transforms
+        if self.transform is not None:
+             image = self.transform(image)
+        return image, label
+
+    def __len__(self):
+        return len(self.image_names)
+
+def count_classes(dataset, class_names):
+    image_names = dataset.image_names
+    labels = dataset.labels
+    labels = np.asarray(labels)
+    df = pd.DataFrame({'Path': image_names, class_names[0]: labels[:, 0], class_names[1]: labels[:, 1], class_names[2]: labels[:, 2], class_names[3]: labels[:, 3], class_names[4]: labels[:, 4], class_names[5]: labels[:, 5]})
+
+    counts = df[class_names].sum(0)
+    
+    return counts
+
+def get_mean_and_std(dataset):
+    mean = torch.tensor([0.0, 0.0, 0.0])
+    std = torch.tensor([0.0, 0.0, 0.0])
+    total_images_count = 0
+
+    for k in range(len(dataset)):
+        image, label = dataset[k]
+        image_tensor = image.permute(1,2,0)
+
+        mean_r, mean_g, mean_b = torch.mean(image_tensor[0,:,:]), torch.mean(image_tensor[1,:,:]), torch.mean(image_tensor[2,:,:])
+        mean_loc = torch.stack((mean_r, mean_g, mean_b))
+        mean += mean_loc
+
+        std_r, std_g, std_b = torch.std(image_tensor[0,:,:]), torch.std(image_tensor[1,:,:]), torch.std(image_tensor[2,:,:])
+        std_loc = torch.stack((std_r, std_g, std_b))
+        std += std_loc
+
+        total_images_count += 1
+
+        if total_images_count == 5000:
+            break
+
+        
+    mean /= total_images_count
+    std /= total_images_count
+
+    return mean, std
+
+def download_data(source: str, 
+                  destination: str,
+                  remove_source: bool = True) -> Path:
+    """Downloads a zipped dataset from source and unzips to destination.
+
+    Args:
+        source (str): A link to a zipped file containing data.
+        destination (str): A target directory to unzip data to.
+        remove_source (bool): Whether to remove the source after downloading and extracting.
+    
+    Returns:
+        pathlib.Path to downloaded data.
+
+    Function created by: Daniel Bourke https://github.com/mrdbourke
+    """
+    # Setup path to data folder
+    data_path = Path(os.getcwd())
+    data_path = data_path.parent.absolute()
+    image_path = data_path / destination
+
+    # If the image folder doesn't exist, download it and prepare it... 
+    if image_path.is_dir():
+        print(f"[INFO] {image_path} directory exists, skipping download.")
+    else:
+        print(f"[INFO] Did not find {image_path} directory, creating one...")
+        image_path.mkdir(parents=True, exist_ok=True)
+        
+        # Download the dataset
+        target_file = Path(source).name
+        with open(data_path / target_file, "wb") as f:
+            request = requests.get(source)
+            print(f"[INFO] Downloading {target_file} from {source}...")
+            f.write(request.content)
+
+        # Unzip dataset
+        with zipfile.ZipFile(data_path / target_file, "r") as zip_ref:
+            print(f"[INFO] Unzipping {target_file} data...") 
+            zip_ref.extractall(data_path)
+
+        # Remove .zip file
+        if remove_source:
+            os.remove(data_path / target_file)
+    
+    return image_path
