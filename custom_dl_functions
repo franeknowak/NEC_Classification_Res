@@ -1,5 +1,5 @@
 """
-This is a separate python file containing all functions essential for creating dataloder + downloading the dataset
+This is a separate python file containing all functions essential for creating dataloder
 """
 
 import numpy as np
@@ -102,6 +102,7 @@ def special_image_names_and_labels(data_PATH, class_names, policy = "ones", mult
             
             # Combine into two big lists of paths and labels
             image_names.append('/SAN/medic/FranekNEC/Runs/' + image_name)
+            label = label.index(1)
             labels.append(label)
 
     return image_names, labels
@@ -150,7 +151,7 @@ def count_classes(dataset, class_names):
     image_names = dataset.image_names
     labels = dataset.labels
     labels = np.asarray(labels)
-    df = pd.DataFrame({'Path': image_names, class_names[0]: labels[:, 0], class_names[1]: labels[:, 1], class_names[2]: labels[:, 2], class_names[3]: labels[:, 3], class_names[4]: labels[:, 4], class_names[5]: labels[:, 5]})
+    df = pd.DataFrame({'Path': image_names, class_names[0]: np.count_nonzero(labels == 0), class_names[1]: np.count_nonzero(labels == 1), class_names[2]: np.count_nonzero(labels == 2), class_names[3]: np.count_nonzero(labels == 3), class_names[4]: np.count_nonzero(labels == 4), class_names[5]: np.count_nonzero(labels == 5)})
 
     counts = df[class_names].sum(0)
     
