@@ -41,13 +41,6 @@ def train_step( model: torch.nn.Module,
     # Enumerate through the dataloader to get individual batches, from there take batch number, X - image tensor and y - label
     for batch, (X, y) in enumerate(dataloader):
         
-        # Change the y from list to a tensor format ("That's the biggest piece of dog shit...")
-        # Catch errors caused by only 1 image in the dataloader
-        y = torch.argmax(torch.stack(y, dim=0).T, dim=1).reshape(-1,1).squeeze()
-        if y.numel() == 1:
-            y = y.unsqueeze(dim = 0)
-
-        # Put data on the available device
         X, y = X.to(device), y.to(device)
 
         # 1. Forward pass
@@ -117,16 +110,12 @@ def test_step(  model: torch.nn.Module,
     with torch.inference_mode():
         # Loop through DataLoader batches
         for batch, (X, y) in enumerate(dataloader):
-            
-            # Change the y from list to a tensor format ("That's the biggest piece of dog shit...")
-            # Catch errors caused by only 1 image in the dataloader
-            y = torch.argmax(torch.stack(y, dim=0).T, dim=1).reshape(-1,1).squeeze()
-            if y.numel() == 1:
-                y = y.unsqueeze(dim = 0)
-            
-            # Send data to target device
+          
             X, y = X.to(device), y.to(device)
-    
+
+            #if y.numel() == 1:
+            #    y = y.unsqueeze(dim = 0)
+                
             # 1. Forward pass
             test_pred_logits = model(X)
 
