@@ -123,7 +123,7 @@ DataLoaderTest = DataLoader(dataset = datasetStack, batch_size = batch_size,
 
 # Login to wandb
 import wandb
-wandb.login(key = 'xXXXXXXXXXXXXXXXXXXXXXXXXXXXX)
+wandb.login(key = 'XXXXXXXXXXXXXXXX')
 
 # Make path to save model state dicts to
 model_path = Path("Models")
@@ -135,7 +135,8 @@ model_path.mkdir(parents = True, exist_ok = True)
 # Import model
 torch.manual_seed(613124)
 weights = ResNet50_Weights.DEFAULT
-model = torchvision.models.resnet50(weights=None).to(device)
+model = torchvision.models.resnet50(weights=weights).to(device)
+
 
 
 # Adjust the fully connected layer to output correct number of classes
@@ -152,7 +153,7 @@ loss_fn = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
 
 # Number of epochs
-epochs = 5
+epochs = 15
 
 # Start the timer
 from model_training_engine_chexpert_wandb_v2 import train
@@ -160,7 +161,7 @@ from model_training_engine_chexpert_wandb_v2 import train
 # Set up wandb config
 run = wandb.init(
         project = "Experiment_1_Chexpert",
-        name = "Unpretrained_Unfrozen",
+        name = "Pretrained_Unfrozen_15E",
         notes = "Compare impact of freezing all but fully connected layer vs leaving all the learnable parameters unlocked",
         config = {
             "Model": "Pytorch's ResNet50",
@@ -191,7 +192,7 @@ print(f"[INFO] Total training time: {end_time-start_time: .3f} seconds")
 wandb.log({"Total training time [s]": end_time-start_time})
 
 # Save model and upload it to WANDB
-model_name = 'Experiment1Case0_5E'
+model_name = 'Experiment1Case0_15E'
 
 model_save_path = model_path / model_name
 
@@ -200,151 +201,5 @@ artifact = wandb.Artifact(model_name, type = 'model')
 artifact.add_file(model_save_path)
 run.log_artifact(artifact)
 
-
-wandb.finish()
-
-# %%
-## CASE 1 - Pre-trained/Unfrozen ##
-# Import model
-model = torchvision.models.resnet50(weights=weights).to(device)
-
-# Adjust the fully connected layer to output only three classes
-output_shape = len(class_names)
-model.fc = torch.nn.Sequential(
-    torch.nn.Dropout(p = 0.2, inplace = True),
-    torch.nn.Linear(in_features = 2048,
-                    out_features = output_shape,
-                    bias = True).to(device)
-)
-
-# Set up optimizer (loss_fn was established earlier)
-optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
-
-# Start the timer
-from model_training_engine_chexpert_wandb_v2 import train
-
-# Set up wandb config
-run = wandb.init(
-        project = "Experiment_1_Chexpert",
-        name = "Pretrained_Unfrozen",
-        notes = "Compare impact of freezing all but fully connected layer vs leaving all the learnable parameters unlocked",
-        config = {
-            "Model": "Pytorch's ResNet50",
-            "Pretrained": True,
-            "Learning Parameters": "Unfrozen",
-            "Epochs": epochs,
-            "Batch Size": 32,
-            "Learning Rate": 0.001,
-            "Loss Function": "Cross Entropy Loss",
-            "Optimizer": "Adam",
-            "Preprocessing": "Transform List A"
-            })
-
-# Start timer
-start_time = timer()
-print("Training commences, timer started...")
-
-# Setup training/testing loop
-results = train(model = model,
-                train_dataloader = DataLoaderTrain,
-                test_dataloader = DataLoaderTest,
-                optimizer = optimizer,
-                loss_fn = loss_fn,
-                epochs = epochs,
-                device = device)
-end_time = timer()
-print(f"[INFO] Total training time: {end_time-start_time: .3f} seconds")
-wandb.log({"Total training time [s]": end_time-start_time})
-
-# Save model and upload it to WANDB
-model_name = 'Experiment1Case1'
-
-model_save_path = model_path / model_name
-
-torch.save(model.state_dict(), f = model_save_path)
-artifact = wandb.Artifact(model_name, type = 'model')
-artifact.add_file(model_save_path)
-run.log_artifact(artifact)
-
-wandb.finish()
-
-
-# %%
-## CASE 2 - Pre-trained/Frozen ##
-# Import model
-model = torchvision.models.resnet50(weights=weights).to(device)
-
-# Set up loss and an optimizer
-loss_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
-
-# Number of epochs
-epochs = 5
-
-# Start the timer
-from model_training_engine_chexpert_wandb_v2 import train
-
-# Freeze all the gradients
-for param in model.parameters():
-    param.requires_grad = False
-
-# Adjust the fully connected layer to output only three classes
-output_shape = len(class_names)
-model.fc = torch.nn.Sequential(
-    torch.nn.Dropout(p = 0.2, inplace = True),
-    torch.nn.Linear(in_features = 2048,
-                    out_features = output_shape,
-                    bias = True).to(device)
-)
-
-
-# Set up optimizer (loss_fn was established earlier)
-optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
-
-# Start the timer
-from model_training_engine_chexpert_wandb_v2 import train
-
-# Set up wandb config
-wandb.init(
-        project = "Experiment_1_Chexpert",
-        name = "Pretrained_Frozen",
-        notes = "Compare impact of freezing all but fully connected layer vs leaving all the learnable parameters unlocked",
-        config = {
-            "Model": "Pytorch's ResNet50",
-            "Pretrained": True,
-            "Learning Parameters": "Frozen",
-            "Epochs": epochs,
-            "Batch Size": 32,
-            "Learning Rate": 0.001,
-            "Loss Function": "Cross Entropy Loss",
-            "Optimizer": "Adam",
-            "Preprocessing": "Transform List A"
-            })
-
-# Start timer
-start_time = timer()
-print("Training commences, timer started...")
-
-# Setup training/testing loop
-results = train(model = model,
-                train_dataloader = DataLoaderTrain,
-                test_dataloader = DataLoaderTest,
-                optimizer = optimizer,
-                loss_fn = loss_fn,
-                epochs = epochs,
-                device = device)
-end_time = timer()
-print(f"[INFO] Total training time: {end_time-start_time: .3f} seconds")
-wandb.log({"Total training time [s]": end_time-start_time})
-
-# Save model and upload it to WANDB
-model_name = 'Experiment1Case2'
-
-model_save_path = model_path / model_name
-
-torch.save(model.state_dict(), f = model_save_path)
-artifact = wandb.Artifact(model_name, type = 'model')
-artifact.add_file(model_save_path)
-run.log_artifact(artifact)
 
 wandb.finish()
